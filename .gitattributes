@@ -1,0 +1,25 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Go source files
+*.go text eol=lf
+
+# Web files
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Scripts
+*.sh text eol=lf
+
+# Binary files
+*.db binary
+*.sqlite binary
+*.dylib binary
+*.so binary
+*.dll binary
+*.exe binary

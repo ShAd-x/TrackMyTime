@@ -1,0 +1,26 @@
+# Type de changement (choisir un):
+# feat: Nouvelle fonctionnalité
+# fix: Correction de bug
+# docs: Documentation uniquement
+# style: Formatage, point-virgule manquant, etc.
+# refactor: Refactoring du code
+# perf: Amélioration des performances
+# test: Ajout de tests
+# chore: Maintenance, build, etc.
+
+# Exemple de commit message:
+# feat: add dark mode toggle to dashboard
+# 
+# - Add theme switcher in header
+# - Persist user preference in localStorage
+# - Update CSS variables for dark theme
+#
+# Closes #42
+
+# ────────────────────────────────────────
+# Règles:
+# - 1ère ligne: max 50 caractères
+# - 2ème ligne: vide
+# - Corps: max 72 caractères par ligne
+# - Utiliser l'impératif ("add" pas "added")
+# - Référencer les issues si applicable

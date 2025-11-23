@@ -2,6 +2,10 @@
 
 Agent desktop pour tracker automatiquement votre temps d'activité avec un dashboard web moderne.
 
+Tout est stocké localement sur votre machine, aucune donnée n'est envoyée en ligne.
+
+Testé sur macOS uniquement, pour les autres OS, aucun test n'a été effectué.
+
 ## 🚀 Quick Start
 
 ```bash

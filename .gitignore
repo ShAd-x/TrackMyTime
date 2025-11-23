@@ -1,0 +1,65 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+trackmytime
+trackmytime-*
+
+# Build directory
+build/
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+nohup.out
+
+# Export files
+*.csv
+*.json
+!go.mod
+!go.sum
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local config overrides
+config.local.go
+.env
+.env.local
+
+# OS specific
+Thumbs.db
+Desktop.ini
