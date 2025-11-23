@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackMyTime</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Header -->
+        <header class="mb-8 flex items-center justify-between">
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-900">TrackMyTime</h1>
+                </div>
+                
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-gray-200">
+                    <span class="w-2 h-2 rounded-full bg-gray-300" id="status-dot"></span>
+                    <span class="text-sm text-gray-600" id="status-text">Connexion</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <div class="flex gap-2 bg-white rounded-lg border border-gray-200 p-1">
+                    <button onclick="setPeriod('today')" id="btn-today" class="px-4 py-2 rounded-md text-sm font-medium transition-all bg-gray-900 text-white">
+                        Aujourd'hui
+                    </button>
+                    <button onclick="setPeriod('week')" id="btn-week" class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all">
+                        Semaine
+                    </button>
+                </div>
+                
+                <button onclick="exportData('csv')" class="p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-all">
+                    <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                </button>
+                
+                <button onclick="refreshDashboard()" class="p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-all">
+                    <svg id="refresh-icon" class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+                <p class="text-sm font-medium text-gray-500 mb-1">Temps total aujourd'hui</p>
+                <p class="text-3xl font-bold text-gray-900 font-mono" id="total-time">--:--:--</p>
+            </div>
+            
+            <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+                <p class="text-sm font-medium text-gray-500 mb-1">Temps inactif</p>
+                <p class="text-3xl font-bold text-gray-900 font-mono" id="idle-time">--:--:--</p>
+            </div>
+            
+            <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+                <p class="text-sm font-medium text-gray-500 mb-1">Applications</p>
+                <p class="text-3xl font-bold text-gray-900 font-mono" id="apps-count">--</p>
+            </div>
+            
+            <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+                <p class="text-sm font-medium text-gray-500 mb-1">Prochaine actualisation</p>
+                <p class="text-3xl font-bold text-gray-900 font-mono"><span id="countdown">5</span>s</p>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Timeline Chart -->
+            <div class="bg-white rounded-xl border border-gray-200 p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-lg font-bold text-gray-900">Timeline d'activité</h2>
+                    <span class="text-sm text-gray-500">Dernières 24h</span>
+                </div>
+                <div class="h-80">
+                    <canvas id="timeline-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Donut Chart -->
+            <div class="bg-white rounded-xl border border-gray-200 p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-lg font-bold text-gray-900">Top applications</h2>
+                    <span class="text-sm text-gray-500" id="period-label">Aujourd'hui</span>
+                </div>
+                <div class="h-80">
+                    <canvas id="donut-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Applications List -->
+        <div class="bg-white rounded-xl border border-gray-200 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-bold text-gray-900">Toutes les applications</h2>
+                <button onclick="toggleGroupView()" id="toggle-group-btn" 
+                        class="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-all font-medium">
+                    📋 Vue simple
+                </button>
+            </div>
+            <div class="space-y-3" id="apps-list">
+                <div class="text-center py-12 text-gray-400">Chargement des données...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
