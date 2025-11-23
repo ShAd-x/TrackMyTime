@@ -6,6 +6,8 @@ Tout est stocké localement sur votre machine, aucune donnée n'est envoyée en 
 
 Testé sur macOS uniquement, pour les autres OS, aucun test n'a été effectué.
 
+![Dashboard](dashboard.png)
+
 ## 🚀 Quick Start
 
 ```bash
