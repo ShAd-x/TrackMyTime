@@ -47,6 +47,25 @@
                     <button onclick="setPeriod('week')" id="btn-week" class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all">
                         Semaine
                     </button>
+                    <button onclick="setPeriod('month')" id="btn-month" class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all">
+                        Mois
+                    </button>
+                    <button onclick="toggleCustomPeriod()" id="btn-custom" class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all">
+                        Personnalisé
+                    </button>
+                </div>
+                
+                <!-- Custom period selector -->
+                <div id="custom-period-selector" class="hidden flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-2">
+                    <input type="date" id="custom-start" class="px-2 py-1 text-sm border border-gray-300 rounded">
+                    <span class="text-gray-500">à</span>
+                    <input type="date" id="custom-end" class="px-2 py-1 text-sm border border-gray-300 rounded">
+                    <button onclick="applyCustomPeriod()" class="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">
+                        OK
+                    </button>
+                    <button onclick="cancelCustomPeriod()" class="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300">
+                        ✕
+                    </button>
                 </div>
                 
                 <button onclick="exportData('csv')" class="p-2.5 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-all">
@@ -66,17 +85,17 @@
         <!-- Stats Cards -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
-                <p class="text-sm font-medium text-gray-500 mb-1">Temps total aujourd'hui</p>
+                <p class="text-sm font-medium text-gray-500 mb-1" id="total-time-label">Temps total aujourd'hui</p>
                 <p class="text-3xl font-bold text-gray-900 font-mono" id="total-time">--:--:--</p>
             </div>
             
             <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
-                <p class="text-sm font-medium text-gray-500 mb-1">Temps inactif</p>
+                <p class="text-sm font-medium text-gray-500 mb-1" id="idle-time-label">Temps inactif</p>
                 <p class="text-3xl font-bold text-gray-900 font-mono" id="idle-time">--:--:--</p>
             </div>
             
             <div class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow">
-                <p class="text-sm font-medium text-gray-500 mb-1">Applications</p>
+                <p class="text-sm font-medium text-gray-500 mb-1" id="apps-count-label">Applications</p>
                 <p class="text-3xl font-bold text-gray-900 font-mono" id="apps-count">--</p>
             </div>
             

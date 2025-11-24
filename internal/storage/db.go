@@ -84,7 +84,7 @@ func (db *DB) GetActivitiesByDateRange(start, end time.Time) ([]Activity, error)
 	query := `
 		SELECT id, app_name, window_title, process_path, start_time, end_time, duration_seconds, is_idle
 		FROM activities
-		WHERE start_time >= ? AND start_time <= ?
+		WHERE start_time >= ? AND start_time < ?
 		ORDER BY start_time DESC
 	`
 
@@ -136,6 +136,15 @@ func (db *DB) GetWeekActivities() ([]Activity, error) {
 	endOfWeek := startOfWeek.Add(7 * 24 * time.Hour)
 
 	return db.GetActivitiesByDateRange(startOfWeek, endOfWeek)
+}
+
+// GetMonthActivities retourne les activités du mois
+func (db *DB) GetMonthActivities() ([]Activity, error) {
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
+
+	return db.GetActivitiesByDateRange(startOfMonth, endOfMonth)
 }
 
 // GetConfig récupère une valeur de configuration
@@ -198,7 +207,7 @@ func (db *DB) GetHourlyStats(start, end time.Time) ([]int64, error) {
 			CAST(strftime('%H', start_time, 'localtime') AS INTEGER) as hour,
 			SUM(duration_seconds) as total_duration
 		FROM activities
-		WHERE start_time >= ? AND start_time <= ? AND is_idle = 0
+		WHERE start_time >= ? AND start_time < ? AND is_idle = 0
 		GROUP BY hour
 		ORDER BY hour
 	`
@@ -223,6 +232,55 @@ func (db *DB) GetHourlyStats(start, end time.Time) ([]int64, error) {
 	return hourlyStats, nil
 }
 
+// GetDailyStats retourne les statistiques par jour pour une période donnée
+func (db *DB) GetDailyStats(start, end time.Time) ([]int64, error) {
+	// Calculer le nombre de jours dans la période
+	days := int(end.Sub(start).Hours() / 24)
+	if days <= 0 {
+		days = 1
+	}
+
+	dailyStats := make([]int64, days)
+
+	query := `
+		SELECT 
+			date(start_time, 'localtime') as day,
+			SUM(duration_seconds) as total_duration
+		FROM activities
+		WHERE start_time >= ? AND start_time < ? AND is_idle = 0
+		GROUP BY day
+		ORDER BY day
+	`
+
+	rows, err := db.conn.Query(query, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dayStr string
+		var duration int64
+		if err := rows.Scan(&dayStr, &duration); err != nil {
+			return nil, err
+		}
+
+		// Parser la date et calculer l'index
+		dayTime, err := time.Parse("2006-01-02", dayStr)
+		if err != nil {
+			continue
+		}
+
+		// Calculer le nombre de jours depuis le début de la période
+		dayIndex := int(dayTime.Sub(start).Hours() / 24)
+		if dayIndex >= 0 && dayIndex < days {
+			dailyStats[dayIndex] = duration
+		}
+	}
+
+	return dailyStats, nil
+}
+
 // GetGroupedStats retourne les stats groupées par app puis par enriched_name
 func (db *DB) GetGroupedStats(start, end time.Time) (map[string]map[string]int64, error) {
 	query := `
@@ -235,29 +293,29 @@ func (db *DB) GetGroupedStats(start, end time.Time) (map[string]map[string]int64
 		GROUP BY app_name, enriched
 		ORDER BY app_name, total_duration DESC
 	`
-	
+
 	rows, err := db.conn.Query(query, start, end)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	// Structure: map[AppName]map[EnrichedName]Duration
 	grouped := make(map[string]map[string]int64)
-	
+
 	for rows.Next() {
 		var appName, enrichedName string
 		var duration int64
-		
+
 		if err := rows.Scan(&appName, &enrichedName, &duration); err != nil {
 			return nil, err
 		}
-		
+
 		if grouped[appName] == nil {
 			grouped[appName] = make(map[string]int64)
 		}
 		grouped[appName][enrichedName] = duration
 	}
-	
+
 	return grouped, nil
 }

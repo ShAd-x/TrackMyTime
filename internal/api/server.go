@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"time"
 
 	"trackmytime/internal/storage"
@@ -50,6 +51,8 @@ func (s *Server) Start() error {
 	// API routes
 	mux.HandleFunc("/stats/today", s.handleStatsToday)
 	mux.HandleFunc("/stats/week", s.handleStatsWeek)
+	mux.HandleFunc("/stats/month", s.handleStatsMonth)
+	mux.HandleFunc("/stats/custom", s.handleStatsCustom)
 	mux.HandleFunc("/export/csv", s.handleExportCSV)
 	mux.HandleFunc("/activity/current", s.handleCurrentActivity)
 	mux.HandleFunc("/browser/event", s.handleBrowserEvent)
@@ -92,21 +95,13 @@ func (s *Server) handleStatsToday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculer le temps inactif
-	var totalIdleSeconds int64
-	for _, activity := range activities {
-		if activity.IsIdle {
-			totalIdleSeconds += activity.DurationSecs
-		}
-	}
-
-	response := map[string]interface{}{
+	response := map[string]any{
 		"date":                 now.Format("2006-01-02"),
 		"total_activities":     len(activities),
 		"stats_by_app":         stats,
 		"total_active_seconds": sumStats(stats),
 		"total_active_hours":   float64(sumStats(stats)) / 3600.0,
-		"total_idle_seconds":   totalIdleSeconds,
+		"total_idle_seconds":   calculateIdleTime(activities),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -135,22 +130,84 @@ func (s *Server) handleStatsWeek(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculer le temps inactif
-	var totalIdleSeconds int64
-	for _, activity := range activities {
-		if activity.IsIdle {
-			totalIdleSeconds += activity.DurationSecs
-		}
-	}
-
-	response := map[string]interface{}{
+	response := map[string]any{
 		"week_start":           startOfWeek.Format("2006-01-02"),
 		"week_end":             endOfWeek.Format("2006-01-02"),
 		"total_activities":     len(activities),
 		"stats_by_app":         stats,
 		"total_active_seconds": sumStats(stats),
 		"total_active_hours":   float64(sumStats(stats)) / 3600.0,
-		"total_idle_seconds":   totalIdleSeconds,
+		"total_idle_seconds":   calculateIdleTime(activities),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleStatsMonth retourne les statistiques du mois
+func (s *Server) handleStatsMonth(w http.ResponseWriter, r *http.Request) {
+	activities, err := s.db.GetMonthActivities()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
+
+	stats, err := s.db.GetStatsByApp(startOfMonth, endOfMonth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]any{
+		"month_start":          startOfMonth.Format("2006-01-02"),
+		"month_end":            endOfMonth.Format("2006-01-02"),
+		"total_activities":     len(activities),
+		"stats_by_app":         stats,
+		"total_active_seconds": sumStats(stats),
+		"total_active_hours":   float64(sumStats(stats)) / 3600.0,
+		"total_idle_seconds":   calculateIdleTime(activities),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleStatsCustom retourne les statistiques pour une période personnalisée
+func (s *Server) handleStatsCustom(w http.ResponseWriter, r *http.Request) {
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+
+	start, end, err := s.parseCustomPeriod(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Récupérer les activités
+	activities, err := s.db.GetActivitiesByDateRange(start, end)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	stats, err := s.db.GetStatsByApp(start, end)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]any{
+		"start_date":           startStr,
+		"end_date":             endStr,
+		"total_activities":     len(activities),
+		"stats_by_app":         stats,
+		"total_active_seconds": sumStats(stats),
+		"total_active_hours":   float64(sumStats(stats)) / 3600.0,
+		"total_idle_seconds":   calculateIdleTime(activities),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -172,8 +229,18 @@ func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 		activities, err = s.db.GetTodayActivities()
 	case "week":
 		activities, err = s.db.GetWeekActivities()
+	case "month":
+		activities, err = s.db.GetMonthActivities()
+	case "custom":
+		var start, end time.Time
+		start, end, err = s.parseCustomPeriod(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		activities, err = s.db.GetActivitiesByDateRange(start, end)
 	default:
-		http.Error(w, "period invalide (today, week)", http.StatusBadRequest)
+		http.Error(w, "period invalide (today, week, month, custom)", http.StatusBadRequest)
 		return
 	}
 
@@ -214,7 +281,7 @@ func (s *Server) handleCurrentActivity(w http.ResponseWriter, r *http.Request) {
 
 	duration := time.Since(s.tracker.StartTime)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"app_name":         s.tracker.CurrentWindow.AppName,
 		"window_title":     s.tracker.CurrentWindow.WindowTitle,
 		"process_path":     s.tracker.CurrentWindow.ProcessPath,
@@ -279,22 +346,9 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 		format = "csv"
 	}
 
-	var start, end time.Time
-	now := time.Now()
-
-	switch period {
-	case "today":
-		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		end = start.Add(24 * time.Hour)
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		start = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-		end = start.Add(7 * 24 * time.Hour)
-	default:
-		http.Error(w, "period invalide (today, week)", http.StatusBadRequest)
+	start, end, err := s.getPeriodBounds(period, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -303,6 +357,25 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Type pour le tri
+	type appStat struct {
+		name    string
+		seconds int64
+	}
+
+	// Convertir map en slice pour le tri
+	var sortedStats []appStat
+	var totalSeconds int64
+	for appName, seconds := range stats {
+		sortedStats = append(sortedStats, appStat{appName, seconds})
+		totalSeconds += seconds
+	}
+
+	// Tri par durée décroissante avec sort.Slice
+	sort.Slice(sortedStats, func(i, j int) bool {
+		return sortedStats[i].seconds > sortedStats[j].seconds
+	})
 
 	if format == "json" {
 		// Format JSON avec durées HH:MM:SS
@@ -314,27 +387,6 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 		}
 
 		var statsList []AggregatedStat
-		var totalSeconds int64
-
-		// Convertir et trier
-		type appStat struct {
-			name    string
-			seconds int64
-		}
-		var sortedStats []appStat
-		for appName, seconds := range stats {
-			sortedStats = append(sortedStats, appStat{appName, seconds})
-			totalSeconds += seconds
-		}
-
-		// Tri par durée décroissante
-		for i := 0; i < len(sortedStats); i++ {
-			for j := i + 1; j < len(sortedStats); j++ {
-				if sortedStats[j].seconds > sortedStats[i].seconds {
-					sortedStats[i], sortedStats[j] = sortedStats[j], sortedStats[i]
-				}
-			}
-		}
 
 		for _, stat := range sortedStats {
 			hours := stat.seconds / 3600
@@ -356,14 +408,14 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 		totalSecs := totalSeconds % 60
 		totalDuration := fmt.Sprintf("%02d:%02d:%02d", totalHours, totalMinutes, totalSecs)
 
-		result := map[string]interface{}{
+		result := map[string]any{
 			"period":       period,
 			"applications": statsList,
-			"total": AggregatedStat{
-				AppName:      "TOTAL",
-				Duration:     totalDuration,
-				TotalHours:   float64(totalSeconds) / 3600.0,
-				TotalSeconds: totalSeconds,
+			"total": map[string]any{
+				"app_name":      "TOTAL",
+				"duration":      totalDuration,
+				"total_hours":   float64(totalSeconds) / 3600.0,
+				"total_seconds": totalSeconds,
 			},
 		}
 
@@ -377,26 +429,7 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 		// Header CSV
 		w.Write([]byte("Application,Duration (HH:MM:SS),Total Hours,Total Seconds\n"))
 
-		// Trier par durée décroissante
-		type appStat struct {
-			name    string
-			seconds int64
-		}
-		var sortedStats []appStat
-		for appName, seconds := range stats {
-			sortedStats = append(sortedStats, appStat{appName, seconds})
-		}
-
-		for i := 0; i < len(sortedStats); i++ {
-			for j := i + 1; j < len(sortedStats); j++ {
-				if sortedStats[j].seconds > sortedStats[i].seconds {
-					sortedStats[i], sortedStats[j] = sortedStats[j], sortedStats[i]
-				}
-			}
-		}
-
 		// Écrire les données
-		var totalSeconds int64
 		for _, stat := range sortedStats {
 			hours := stat.seconds / 3600
 			minutes := (stat.seconds % 3600) / 60
@@ -406,7 +439,6 @@ func (s *Server) handleExportAggregated(w http.ResponseWriter, r *http.Request) 
 
 			line := fmt.Sprintf("%s,%s,%.2f,%d\n", stat.name, duration, totalHours, stat.seconds)
 			w.Write([]byte(line))
-			totalSeconds += stat.seconds
 		}
 
 		// Ligne de total
@@ -435,34 +467,55 @@ func (s *Server) handleStatsHourly(w http.ResponseWriter, r *http.Request) {
 		period = "today"
 	}
 
-	var start, end time.Time
-	now := time.Now()
-
-	switch period {
-	case "today":
-		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		end = start.Add(24 * time.Hour)
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		start = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-		end = start.Add(7 * 24 * time.Hour)
-	default:
-		http.Error(w, "period invalide (today, week)", http.StatusBadRequest)
-		return
-	}
-
-	hourlyStats, err := s.db.GetHourlyStats(start, end)
+	start, end, err := s.getPeriodBounds(period, r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	response := map[string]interface{}{
-		"period":      period,
-		"hourly_data": hourlyStats,
+	// Pour today, utiliser les stats horaires, sinon les stats journalières
+	var timelineData []int64
+	var labels []string
+
+	// Utiliser les stats horaires pour une seule journée, sinon par jour
+	durationDays := int(end.Sub(start).Hours() / 24)
+
+	if period == "today" || (period == "custom" && durationDays == 1) {
+		timelineData, err = s.db.GetHourlyStats(start, end)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Labels pour les heures
+		labels = make([]string, 24)
+		for i := range labels {
+			labels[i] = fmt.Sprintf("%02d:00", i)
+		}
+	} else {
+		timelineData, err = s.db.GetDailyStats(start, end)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Labels pour les jours
+		labels = make([]string, len(timelineData))
+		for i := range labels {
+			day := start.AddDate(0, 0, i)
+			if period == "week" {
+				// Pour la semaine, afficher Lun, Mar, Mer, etc.
+				weekdays := []string{"Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"}
+				labels[i] = weekdays[day.Weekday()]
+			} else {
+				// Pour le mois, afficher le numéro du jour
+				labels[i] = fmt.Sprintf("%d", day.Day())
+			}
+		}
+	}
+
+	response := map[string]any{
+		"period":        period,
+		"timeline_data": timelineData,
+		"labels":        labels,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -475,50 +528,37 @@ func (s *Server) handleStatsGrouped(w http.ResponseWriter, r *http.Request) {
 	if period == "" {
 		period = "today"
 	}
-	
-	var start, end time.Time
-	now := time.Now()
-	
-	switch period {
-	case "today":
-		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		end = start.Add(24 * time.Hour)
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		start = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-		end = start.Add(7 * 24 * time.Hour)
-	default:
-		http.Error(w, "period invalide (today, week)", http.StatusBadRequest)
+
+	start, end, err := s.getPeriodBounds(period, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	grouped, err := s.db.GetGroupedStats(start, end)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Formatter la réponse
 	type EnrichedApp struct {
 		Name     string `json:"name"`
 		Duration int64  `json:"duration"`
 	}
-	
+
 	type AppGroup struct {
 		AppName      string        `json:"app_name"`
 		TotalSeconds int64         `json:"total_seconds"`
 		Children     []EnrichedApp `json:"children"`
 	}
-	
+
 	var result []AppGroup
-	
+
 	for appName, children := range grouped {
 		var totalSeconds int64
 		var childrenList []EnrichedApp
-		
+
 		for enrichedName, duration := range children {
 			totalSeconds += duration
 			childrenList = append(childrenList, EnrichedApp{
@@ -526,37 +566,29 @@ func (s *Server) handleStatsGrouped(w http.ResponseWriter, r *http.Request) {
 				Duration: duration,
 			})
 		}
-		
-		// Trier children par durée décroissante
-		for i := 0; i < len(childrenList); i++ {
-			for j := i + 1; j < len(childrenList); j++ {
-				if childrenList[j].Duration > childrenList[i].Duration {
-					childrenList[i], childrenList[j] = childrenList[j], childrenList[i]
-				}
-			}
-		}
-		
+
+		// Trier children par durée décroissante avec sort.Slice
+		sort.Slice(childrenList, func(i, j int) bool {
+			return childrenList[i].Duration > childrenList[j].Duration
+		})
+
 		result = append(result, AppGroup{
 			AppName:      appName,
 			TotalSeconds: totalSeconds,
 			Children:     childrenList,
 		})
 	}
-	
-	// Trier result par durée totale décroissante
-	for i := 0; i < len(result); i++ {
-		for j := i + 1; j < len(result); j++ {
-			if result[j].TotalSeconds > result[i].TotalSeconds {
-				result[i], result[j] = result[j], result[i]
-			}
-		}
-	}
-	
-	response := map[string]interface{}{
+
+	// Trier result par durée totale décroissante avec sort.Slice
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TotalSeconds > result[j].TotalSeconds
+	})
+
+	response := map[string]any{
 		"period": period,
 		"groups": result,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
